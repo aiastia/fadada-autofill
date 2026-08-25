@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 340px; padding: 12px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #303133; }
+  h1 { font-size: 14px; margin-bottom: 8px; }
+  h1 small { font-weight: normal; color: #909399; font-size: 11px; }
+  .group { margin-bottom: 10px; }
+  .group-title { font-size: 12px; color: #409eff; font-weight: 600; margin: 8px 0 4px; }
+  .row { display: flex; align-items: center; margin-bottom: 5px; }
+  .row label { width: 118px; flex: none; color: #606266; font-size: 12px; }
+  .row input[type=text] { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 7px; font-size: 12px; outline: none; }
+  .row input[type=text]:focus { border-color: #409eff; }
+  .row input.filled { background: #f0f9eb; }
+  .opts { display: flex; gap: 14px; margin: 8px 0; font-size: 12px; color: #606266; }
+  .opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .btns { display: flex; gap: 8px; margin-top: 8px; }
+  button { flex: 1; border: none; border-radius: 4px; padding: 7px 0; font-size: 12px; cursor: pointer; }
+  .primary { background: #409eff; color: #fff; }
+  .success { background: #67c23a; color: #fff; }
+  .plain { background: #fff; color: #606266; border: 1px solid #dcdfe6 !important; flex: 0.8; }
+  #status { margin-top: 8px; font-size: 12px; min-height: 16px; text-align: center; }
+  #status.ok { color: #67c23a; }
+  #status.err { color: #f56c6c; }
+  .link-btn { background: none; border: none; color: #409eff; font-size: 11px; cursor: pointer; padding: 0; flex: none; }
+</style>
+</head>
+<body>
+  <h1>蛙蛙平台作者·签约一键填充</h1>
+  <div style="font-size:11px;color:#909399;margin-bottom:6px;">仅适用于蛙蛙平台（124678.xyz）通过法大大发起的《个人作品著作权转让协议》签署页</div>
+
+  <div class="group">
+    <div class="group-title">个人信息（第 1 页 · 必填）</div>
+    <div id="personal"></div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">收款账户（第 5 页）</div>
+    <div id="bank"></div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">授权书（第 10 页）
+      <button class="link-btn" id="copyToAuth">同个人信息</button>
+    </div>
+    <div id="auth"></div>
+  </div>
+
+  <div class="opts">
+    <label><input type="checkbox" id="autoFill">打开签署页自动填充</label>
+    <label><input type="checkbox" id="showFab">显示悬浮填充按钮</label>
+  </div>
+
+  <div class="btns">
+    <button class="plain" id="save">保存</button>
+    <button class="primary" id="fillNow">立即填充本页</button>
+    <button class="plain" id="readPage">读取当前值</button>
+  </div>
+
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
