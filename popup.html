@@ -4,49 +4,88 @@
 <meta charset="UTF-8">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { width: 340px; padding: 12px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #303133; }
-  h1 { font-size: 14px; margin-bottom: 8px; }
-  h1 small { font-weight: normal; color: #909399; font-size: 11px; }
-  .group { margin-bottom: 10px; }
-  .group-title { font-size: 12px; color: #409eff; font-weight: 600; margin: 8px 0 4px; }
+  body { width: 360px; padding: 12px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #303133; }
+  h1 { font-size: 14px; margin-bottom: 4px; }
+  .scope { font-size: 11px; color: #909399; margin-bottom: 8px; }
+  .group-title { font-size: 12px; color: #409eff; font-weight: 600; margin: 10px 0 4px; display: flex; justify-content: space-between; align-items: center; }
   .row { display: flex; align-items: center; margin-bottom: 5px; }
   .row label { width: 118px; flex: none; color: #606266; font-size: 12px; }
-  .row input[type=text] { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 7px; font-size: 12px; outline: none; }
+  .row input[type=text] { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 7px; font-size: 12px; outline: none; min-width: 0; }
   .row input[type=text]:focus { border-color: #409eff; }
   .row input.filled { background: #f0f9eb; }
+  .row select { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 3px 5px; font-size: 12px; background: #fff; min-width: 0; }
+  .profile-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .profile-bar select { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 5px; font-size: 12px; background: #fff; min-width: 0; }
+  .mini-btn { background: #ecf5ff; color: #409eff; border: 1px solid #b3d8ff; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+  .mini-btn.danger { background: #fef0f0; color: #f56c6c; border-color: #fbc4c4; }
   .opts { display: flex; gap: 14px; margin: 8px 0; font-size: 12px; color: #606266; }
   .opts label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   .btns { display: flex; gap: 8px; margin-top: 8px; }
-  button { flex: 1; border: none; border-radius: 4px; padding: 7px 0; font-size: 12px; cursor: pointer; }
-  .primary { background: #409eff; color: #fff; }
+  button { border: none; border-radius: 4px; padding: 7px 0; font-size: 12px; cursor: pointer; }
+  .primary { background: #409eff; color: #fff; flex: 1; }
   .success { background: #67c23a; color: #fff; }
   .plain { background: #fff; color: #606266; border: 1px solid #dcdfe6 !important; flex: 0.8; }
+  .link-btn { background: none; border: none; color: #409eff; font-size: 11px; cursor: pointer; padding: 0; flex: none; }
   #status { margin-top: 8px; font-size: 12px; min-height: 16px; text-align: center; }
   #status.ok { color: #67c23a; }
   #status.err { color: #f56c6c; }
-  .link-btn { background: none; border: none; color: #409eff; font-size: 11px; cursor: pointer; padding: 0; flex: none; }
+  .tpl-status { font-size: 12px; color: #606266; margin: 4px 0; }
+  .tpl-status b { color: #67c23a; font-weight: 600; }
+  .tpl-status.warn b { color: #e6a23c; }
+  #learnPanel { border: 1px solid #ebeef5; border-radius: 6px; padding: 8px; margin-top: 6px; background: #fafafa; }
+  #learnPanel .row label { width: 108px; }
+  #learnPanel .ctrl-name { color: #909399; font-size: 11px; width: 70px; flex: none; }
+  #learnPanel .ctrl-val { color: #606266; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crow { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
+  .crow input.cname { width: 92px; flex: none; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 6px; font-size: 12px; color: #409eff; }
+  .crow input.cval { flex: 1; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 7px; font-size: 12px; min-width: 0; }
+  .crow button { padding: 4px 7px; font-size: 11px; }
+  .tpl-list { font-size: 12px; color: #606266; }
+  .tpl-list .item { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+  .tpl-list .item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
   <h1>蛙蛙平台作者·签约一键填充</h1>
-  <div style="font-size:11px;color:#909399;margin-bottom:6px;">仅适用于蛙蛙平台（124678.xyz）通过法大大发起的《个人作品著作权转让协议》签署页</div>
+  <div class="scope">内置蛙蛙平台《个人作品著作权转让协议》模板；其他法大大合同模板可学习，字段不限</div>
 
-  <div class="group">
-    <div class="group-title">个人信息（第 1 页 · 必填）</div>
-    <div id="personal"></div>
+  <div class="group-title">资料
+    <span>
+      <button class="mini-btn" id="newProfile">新建</button>
+      <button class="mini-btn" id="dupProfile">复制</button>
+      <button class="mini-btn danger" id="delProfile">删除</button>
+    </span>
   </div>
+  <div class="profile-bar">
+    <select id="profileSelect"></select>
+  </div>
+  <div class="row"><label>资料名称</label><input type="text" id="profileName" placeholder="如：主号 / 小号"></div>
 
-  <div class="group">
-    <div class="group-title">收款账户（第 5 页）</div>
-    <div id="bank"></div>
-  </div>
+  <div class="group-title">个人信息（第 1 页 · 必填）</div>
+  <div id="personal"></div>
 
-  <div class="group">
-    <div class="group-title">授权书（第 10 页）
-      <button class="link-btn" id="copyToAuth">同个人信息</button>
-    </div>
-    <div id="auth"></div>
+  <div class="group-title">收款账户（第 5 页）</div>
+  <div id="bank"></div>
+
+  <div class="group-title">授权书（第 10 页）
+    <button class="link-btn" id="copyToAuth">同个人信息</button>
   </div>
+  <div id="auth"></div>
+
+  <div class="group-title">自定义字段
+    <button class="link-btn" id="addField">+ 添加字段</button>
+  </div>
+  <div id="custom"></div>
+
+  <div class="group-title">当前页模板</div>
+  <div class="tpl-status" id="tplStatus">检测中…</div>
+  <button class="mini-btn" id="learnBtn" style="margin:2px 0 4px">学习此模板</button>
+  <div id="learnPanel" style="display:none">
+    <div class="row"><label>模板名称</label><input type="text" id="tplName" placeholder="如：系列作品协议"></div>
+    <div id="learnRows"></div>
+    <div class="btns"><button class="success" id="saveTpl" style="flex:1">保存模板</button><button class="plain" id="cancelTpl">取消</button></div>
+  </div>
+  <div class="tpl-list" id="tplList"></div>
 
   <div class="opts">
     <label><input type="checkbox" id="autoFill">打开签署页自动填充</label>
@@ -61,6 +100,7 @@
 
   <div id="status"></div>
 
+  <script src="fields.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,45 +1,27 @@
 // 蛙蛙平台作者·签约一键填充 — content script
-// 仅适用于蛙蛙平台（124678.xyz）通过法大大发起的《个人作品著作权转让协议》签署页。
+// 内置蛙蛙平台通过法大大发起的《个人作品著作权转让协议》模板；
+// 其他合同模板可通过弹窗"学习"扩展（支持自定义字段，控件数量不限）。
 // 页面是 Vue2 + Element UI：直接改 input.value 不会进模型，
 // 必须用原生 value setter 赋值再派发 input 事件（已实测写入 Vue widgets 模型）。
 
 (() => {
   const PATH_PREFIX = '/application/task/sign/';
 
-  // 13 个待填控件按「待处理控件」面板 DOM 顺序排列（蛙蛙平台模板）
-  // 单行文本1×6(第1页个人信息) + 单行文本3×4(第5页收款账户) + 单行文本4/5/6(第10页授权书)
-  const SLOTS = [
-    { key: 'name',        label: '真实姓名' },
-    { key: 'penName',     label: '笔名' },
-    { key: 'idNo',        label: '身份证号' },
-    { key: 'address',     label: '联系地址' },
-    { key: 'phone',       label: '手机号' },
-    { key: 'email',       label: '邮箱' },
-    { key: 'acctName',    label: '开户名称' },
-    { key: 'bank',        label: '开户行' },
-    { key: 'bankBranch',  label: '开户支行' },
-    { key: 'bankAccount', label: '银行账号' },
-    { key: 'name2',       label: '姓名（授权书）' },
-    { key: 'idNo2',       label: '身份证号（授权书）' },
-    { key: 'penName2',    label: '笔名（授权书）' },
-  ];
-
   const hasChrome = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
 
-  const settings = { values: {}, autoFill: true, showFab: true };
+  let settings = fddNormalizeState(null);
+
   function loadSettings(cb) {
     if (!hasChrome) return cb && cb();
-    chrome.storage.local.get({ values: {}, autoFill: true, showFab: true }, (s) => {
-      Object.assign(settings, s);
+    chrome.storage.local.get(null, (raw) => {
+      settings = fddNormalizeState(raw);
       if (cb) cb();
     });
   }
   if (hasChrome && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.values) settings.values = changes.values.newValue || {};
-      if (changes.autoFill) settings.autoFill = changes.autoFill.newValue;
-      if (changes.showFab) { settings.showFab = changes.showFab.newValue; ensureFab(settings.showFab); }
+      loadSettings(() => { ensureFab(settings.showFab); });
     });
   }
 
@@ -58,6 +40,11 @@
     }).filter(x => x.input);
   }
 
+  // 模板指纹 = 待处理控件名称序列（同一合同模板稳定，不同模板几乎不撞）
+  function fingerprint(inputs) {
+    return (inputs || getFillInputs()).map(x => x.label).join(',');
+  }
+
   function setNativeValue(el, value) {
     const proto = el.tagName === 'TEXTAREA'
       ? window.HTMLTextAreaElement.prototype
@@ -68,42 +55,59 @@
     el.dispatchEvent(new Event('blur'));
   }
 
-  /**
-   * @param {Object} values  { name: '...', penName: '...', ... }
-   * @param {Object} opts    { skipFilled }  自动填充时跳过已有内容的框
-   * @returns {Array<{slot, label, action}>} action: filled | skipped-empty-value | skipped-filled | no-mapping
-   */
-  function fillAll(values, opts = {}) {
-    const inputs = getFillInputs();
-    const results = [];
-    SLOTS.forEach((slot, i) => {
-      const value = (values[slot.key] || '').trim();
-      const target = inputs[i];
-      if (!value) {
-        results.push({ slot: slot.key, label: slot.label, action: 'skipped-empty-value' });
-        return;
-      }
-      if (!target) {
-        results.push({ slot: slot.key, label: slot.label, action: 'no-mapping' });
-        return;
-      }
-      if (opts.skipFilled && target.input.value.trim() !== '') {
-        results.push({ slot: slot.key, label: slot.label, action: 'skipped-filled' });
-        return;
-      }
-      setNativeValue(target.input, value);
-      results.push({ slot: slot.key, label: slot.label, action: 'filled' });
-    });
-    return results;
+  function activeValues() {
+    const p = settings.profiles[settings.activeProfileId] || Object.values(settings.profiles)[0];
+    return p ? p.values : {};
   }
 
-  function readCurrent() {
+  /**
+   * 按语义字段值填充：先识别模板，再把 key 映射到控件顺序。
+   * @param {Object} values  语义 key -> 值
+   * @param {Object} opts    { skipFilled } 自动填充时跳过已有内容的框
+   */
+  function fillWith(values, opts = {}) {
     const inputs = getFillInputs();
-    const out = {};
-    SLOTS.forEach((slot, i) => {
-      if (inputs[i]) out[slot.key] = inputs[i].input.value;
+    if (!inputs.length) return { ok: false, reason: 'no-inputs' };
+    const fp = fingerprint(inputs);
+    const tpl = fddFindTemplate(settings, fp);
+    if (!tpl) return { ok: false, reason: 'no-template', fingerprint: fp, count: inputs.length };
+    const results = inputs.map((x, i) => {
+      const key = tpl.keys[i];
+      if (!key) return { i, action: 'skipped-no-key' };
+      const v = (values[key] || '').trim();
+      if (!v) return { i, key, action: 'skipped-empty-value' };
+      if (opts.skipFilled && x.input.value.trim() !== '') return { i, key, action: 'skipped-filled' };
+      setNativeValue(x.input, v);
+      return { i, key, action: 'filled' };
     });
-    return out;
+    return {
+      ok: true,
+      template: tpl.name,
+      filled: results.filter(r => r.action === 'filled').length,
+      total: inputs.length,
+      results,
+    };
+  }
+
+  // 用当前激活资料填充
+  function fillByTemplate(opts) {
+    return fillWith(activeValues(), opts);
+  }
+
+  // 读取页面：控件清单 + 指纹 + 模板匹配情况 + 每个控件的字段猜测（学习模式用）
+  function readPage() {
+    const inputs = getFillInputs();
+    const fp = fingerprint(inputs);
+    const tpl = fddFindTemplate(settings, fp);
+    const pv = activeValues();
+    return {
+      fingerprint: fp,
+      matched: tpl ? tpl.name : null,
+      keys: tpl ? tpl.keys : null,
+      controls: inputs.map((x, i) => ({
+        i, name: x.label, value: x.input.value, guess: fddGuessKey(x.input.value, pv),
+      })),
+    };
   }
 
   // ---- 悬浮按钮 ----
@@ -125,9 +129,13 @@
     });
     fab.onclick = () => {
       loadSettings(() => {
-        const results = fillAll(settings.values);
-        const n = results.filter(r => r.action === 'filled').length;
-        fab.textContent = `已填 ${n} 项`;
+        const r = fillByTemplate();
+        if (!r.ok && r.reason === 'no-template') {
+          fab.textContent = '模板未识别·点图标学习';
+          setTimeout(() => { fab.textContent = '⚡ 填充'; }, 2500);
+          return;
+        }
+        fab.textContent = `已填 ${r.filled}/${r.total} 项`;
         setTimeout(() => { fab.textContent = '⚡ 填充'; }, 1500);
       });
     };
@@ -141,7 +149,7 @@
     autoFilled = true;
     loadSettings(() => {
       ensureFab(settings.showFab);
-      if (settings.autoFill) fillAll(settings.values, { skipFilled: true });
+      if (settings.autoFill) fillByTemplate({ skipFilled: true });
     });
   }
 
@@ -166,11 +174,18 @@
       if (!onSignPage()) { sendResponse({ ok: false, error: '当前页面不是法大大签署页' }); return; }
       try {
         if (msg.cmd === 'fill') {
-          sendResponse({ ok: true, results: fillAll(msg.values || {}) });
+          // 每次现读 storage，避免与 popup 保存竞态
+          loadSettings(() => sendResponse(fillByTemplate()));
+          return true; // 异步响应
         } else if (msg.cmd === 'read') {
-          sendResponse({ ok: true, values: readCurrent() });
+          sendResponse({ ok: true, page: readPage() });
         } else if (msg.cmd === 'ping') {
-          sendResponse({ ok: true, inputs: getFillInputs().length });
+          const inputs = getFillInputs();
+          sendResponse({
+            ok: true,
+            inputs: inputs.length,
+            matched: inputs.length ? (fddFindTemplate(settings, fingerprint(inputs)) || {}).name || null : null,
+          });
         }
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
@@ -179,5 +194,5 @@
   }
 
   // 供控制台/测试注入使用（CDP eval 场景下 chrome.* 不存在也能跑）
-  window.__FDD_FILL__ = { fillAll, readCurrent, getFillInputs, SLOTS };
+  window.__FDD_FILL__ = { fillWith, fillByTemplate, readPage, getFillInputs, fingerprint };
 })();

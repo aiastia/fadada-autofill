@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
   "name": "蛙蛙平台作者·签约一键填充",
-  "version": "1.0.1",
-  "description": "蛙蛙平台（124678.xyz）作者专用：自动填充法大大《个人作品著作权转让协议》签署页的 13 个控件（个人信息、收款账户、授权书）。仅适用于该平台发起的合同模板。",
+  "version": "1.2.0",
+  "description": "蛙蛙平台作者专用：自动填充法大大《个人作品著作权转让协议》签署页的 13 个控件（个人信息、收款账户、授权书）；其他合同模板可学习，支持多套资料与自定义字段。",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://cloud.fadada.com/*"],
   "icons": { "128": "icon128.png" },
   "content_scripts": [
     {
       "matches": ["https://cloud.fadada.com/*"],
-      "js": ["content.js"],
+      "js": ["fields.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
