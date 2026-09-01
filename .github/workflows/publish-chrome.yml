@@ -1,0 +1,85 @@
+name: 发布到 Chrome 商店
+
+# 手动跑：Actions 页选本工作流 → Run workflow（可选填版本号）
+# 打 tag v* 也会自动跑（版本号取自 tag）
+# 凭据在仓库 Settings → Secrets and variables → Actions 里配，见 docs/publish-api.md
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空=用 manifest.json 里的）'
+        required: false
+        default: ''
+      publish:
+        description: '上传后直接提交审核发布（不勾=只更新草稿包）'
+        type: boolean
+        default: true
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        env:
+          VERSION_IN: ${{ inputs.version }}
+        run: |
+          V="${VERSION_IN:-${GITHUB_REF_NAME#v}}"
+          if [[ "$V" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]] && [ "$V" != "$GITHUB_REF_NAME" ]; then
+            jq --arg v "$V" '.version=$v' manifest.json > /tmp/m.json && mv /tmp/m.json manifest.json
+            echo "使用版本号: $V"
+          else
+            echo "版本号沿用 manifest: $(jq -r .version manifest.json)"
+          fi
+
+      - name: 打包扩展
+        run: |
+          zip -r /tmp/extension.zip . \
+            -x ".git/*" ".github/*" "tools/*" "docs/*" "README.md" ".gitignore" "*.DS_Store"
+          unzip -l /tmp/extension.zip
+
+      - name: 换取 Access Token
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          TOKEN=$(curl -sf https://oauth2.googleapis.com/token \
+            --data-urlencode "client_id=$CWS_CLIENT_ID" \
+            --data-urlencode "client_secret=$CWS_CLIENT_SECRET" \
+            --data-urlencode "refresh_token=$CWS_REFRESH_TOKEN" \
+            --data-urlencode "grant_type=refresh_token" \
+            | jq -er .access_token) || { echo '::error::token 失败：检查 CWS_CLIENT_ID / CWS_CLIENT_SECRET / CWS_REFRESH_TOKEN（refresh token 若 7 天过期，是 OAuth 同意屏幕还停在"测试"状态，改成"正式发布"后重新跑 tools/cws-auth.mjs）'; exit 1; }
+          echo "CWS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: 上传新版本
+        env:
+          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+        run: |
+          CODE=$(curl -sS -o /tmp/up.json -w '%{http_code}' -X PUT \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_ITEM_ID" \
+            -H "Authorization: Bearer $CWS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Type: application/zip" -T /tmp/extension.zip) || true
+          echo "HTTP $CODE"; cat /tmp/up.json || true
+          if [ "$CODE" != "200" ]; then
+            echo '::error::上传失败（常见原因：CWS_ITEM_ID 不对、当前版本正在审核中、或版本号和线上重复）'
+            exit 1
+          fi
+
+      - name: 提交审核发布
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+        run: |
+          CODE=$(curl -sS -o /tmp/pub.json -w '%{http_code}' -X POST \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_ITEM_ID/publish" \
+            -H "Authorization: Bearer $CWS_TOKEN" \
+            -H "x-goog-api-version: 2") || true
+          echo "HTTP $CODE"; cat /tmp/pub.json || true
+          [ "$CODE" = "200" ] || { echo '::error::提交发布失败'; exit 1; }
+          echo '已提交——审核结果去 Chrome Web Store 开发者后台看（新版本审核通常数天）。'

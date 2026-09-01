@@ -1,0 +1,135 @@
+name: 发布到 Edge 商店
+
+# 手动跑：Actions 页选本工作流 → Run workflow（可选填版本号/备注）
+# 打 tag v* 也会自动跑（版本号取自 tag）
+# 凭据在仓库 Settings → Secrets and variables → Actions 里配，见 docs/publish-api.md
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空=用 manifest.json 里的）'
+        required: false
+        default: ''
+      publish:
+        description: '上传后直接提交审核发布（不勾=只更新草稿包）'
+        type: boolean
+        default: true
+      notes:
+        description: '给审核员的备注（可留空）'
+        required: false
+        default: ''
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 版本号
+        env:
+          VERSION_IN: ${{ inputs.version }}
+        run: |
+          V="${VERSION_IN:-${GITHUB_REF_NAME#v}}"
+          if [[ "$V" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]] && [ "$V" != "$GITHUB_REF_NAME" ]; then
+            jq --arg v "$V" '.version=$v' manifest.json > /tmp/m.json && mv /tmp/m.json manifest.json
+            echo "使用版本号: $V"
+          else
+            echo "版本号沿用 manifest: $(jq -r .version manifest.json)"
+          fi
+
+      - name: 打包扩展
+        run: |
+          zip -r /tmp/extension.zip . \
+            -x ".git/*" ".github/*" "tools/*" "docs/*" "README.md" ".gitignore" "*.DS_Store"
+          unzip -l /tmp/extension.zip
+
+      - name: 认证（v1.1：API Key + Client ID）
+        env:
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "$v"; }
+          KEY=$(trim "$EDGE_API_KEY"); CID=$(trim "$EDGE_CLIENT_ID")
+          if [ -z "$KEY" ]; then
+            echo '::error::缺 EDGE_API_KEY：合作伙伴中心 → Microsoft Edge 计划 → Publish API → 启用新体验 → Create API credentials 获取'
+            exit 1
+          fi
+          echo "AUTH_HEADER=Authorization: ApiKey $KEY" >> "$GITHUB_ENV"
+          if [ -n "$CID" ]; then
+            echo "CLIENT_HEADER=X-ClientID: $CID" >> "$GITHUB_ENV"
+            echo "v1.1 认证（带 ClientID）"
+          else
+            echo "v1.1 认证（未配 EDGE_CLIENT_ID；实测缺它会被当旧版 API 报 410，务必配置）"
+          fi
+
+      - name: 上传新版本包
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+        run: |
+          BODY=$(mktemp); HDR=$(mktemp)
+          CODE=$(curl -sS -o "$BODY" -D "$HDR" -w '%{http_code}' -X POST \
+            "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/draft/package" \
+            -H "$AUTH_HEADER" ${CLIENT_HEADER:+-H "$CLIENT_HEADER"} \
+            -H "Content-Type: application/zip" -T /tmp/extension.zip) || true
+          echo "HTTP $CODE"; cat "$BODY" || true
+          if [ "$CODE" != "202" ]; then
+            echo '::error::上传被拒（常见原因：EDGE_PRODUCT_ID 不对，或该扩展正在审核中被锁定，等审核完再跑）'
+            exit 1
+          fi
+          LOC=$(grep -i '^location:' "$HDR" | tail -1 | tr -d '\r' | sed 's/^[Ll]ocation:[[:space:]]*//')
+          OP=$(printf '%s' "$LOC" | awk -F'/' '{print $NF}')
+          [ -n "$OP" ] || { echo '::error::未取到操作 ID'; exit 1; }
+          echo "OP_URL=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/draft/package/operations/$OP" >> "$GITHUB_ENV"
+
+      - name: 等包校验完成
+        run: |
+          for i in $(seq 1 60); do
+            RESP=$(curl -sS "$OP_URL" -H "$AUTH_HEADER" ${CLIENT_HEADER:+-H "$CLIENT_HEADER"})
+            ST=$(echo "$RESP" | jq -r '.status // "InProgress"')
+            echo "[$i/60] $ST"
+            case "$ST" in
+              Success|Succeeded|Completed) exit 0 ;;
+              Failed|Error) echo "$RESP"; echo '::error::包校验失败（看上面 JSON，常见是版本号重复/manifest 问题）'; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo '::error::校验超时（10 分钟），去合作伙伴中心看状态'; exit 1
+
+      - name: 提交发布
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          NOTES_IN: ${{ inputs.notes }}
+        run: |
+          NOTES=$(jq -n --arg n "$NOTES_IN" '{notes:$n}')
+          BODY=$(mktemp); HDR=$(mktemp)
+          CODE=$(curl -sS -o "$BODY" -D "$HDR" -w '%{http_code}' -X POST \
+            "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions" \
+            -H "$AUTH_HEADER" ${CLIENT_HEADER:+-H "$CLIENT_HEADER"} \
+            -H "Content-Type: application/json" -d "$NOTES") || true
+          echo "HTTP $CODE"; cat "$BODY" || true
+          if [ "$CODE" != "202" ]; then
+            echo '::error::提交发布被拒'; exit 1
+          fi
+          LOC=$(grep -i '^location:' "$HDR" | tail -1 | tr -d '\r' | sed 's/^[Ll]ocation:[[:space:]]*//')
+          OP=$(printf '%s' "$LOC" | awk -F'/' '{print $NF}')
+          [ -n "$OP" ] || { echo '::error::未取到操作 ID'; exit 1; }
+          echo "OP_URL=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/operations/$OP" >> "$GITHUB_ENV"
+
+      - name: 等发布受理
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        run: |
+          for i in $(seq 1 30); do
+            RESP=$(curl -sS "$OP_URL" -H "$AUTH_HEADER" ${CLIENT_HEADER:+-H "$CLIENT_HEADER"})
+            ST=$(echo "$RESP" | jq -r '.status // "InProgress"')
+            echo "[$i/30] $ST"
+            case "$ST" in
+              Success|Succeeded|Completed) echo '已发布上线（或进入审核流程）'; exit 0 ;;
+              Failed|Error) echo "$RESP"; echo '::error::发布失败'; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo '受理中——后续认证审核需数天，结果看合作伙伴中心；这里不再等待。'
