@@ -15,25 +15,26 @@
 
 ### Edge（3 个）
 
-```bash
-gh secret set EDGE_API_KEY        # 和宏助手同一个 key（账号级）
-gh secret set EDGE_CLIENT_ID      # ✅ 已代填
-gh secret set EDGE_PRODUCT_ID     # 本扩展自己的！合作伙伴中心 → 打开本扩展 → 概览页 Extension identity → 产品 ID
-```
-
-⚠️ `EDGE_PRODUCT_ID` 千万别填成宏助手的，API 靠它定位要更新哪个扩展。
+| Secret | 状态 |
+|---|---|
+| EDGE_CLIENT_ID | ✅ 已代填 |
+| EDGE_PRODUCT_ID | ✅ 已代填（本扩展自己的 d45c0b68-…，来自合作伙伴中心概览页） |
+| EDGE_API_KEY | ❌ 待填：和宏助手同一个 key（账号级），`gh secret set EDGE_API_KEY` |
 
 如果当初的 API Key 没存下来：合作伙伴中心 Publish API 页重新生成一个 → **两个仓库都要更新**（重新生成会让旧 key 失效）。
 
 ### Chrome（4 个）
 
-```bash
-cd ~/Desktop/fadada-autofill
-node tools/cws-auth.mjs           # 浏览器点一次授权，自动写入本仓库的 CWS_CLIENT_ID/SECRET/REFRESH_TOKEN
-gh secret set CWS_ITEM_ID         # 本扩展自己的！Chrome 商店开发者后台 → 本条目页面的 Item ID
-```
+| Secret | 状态 |
+|---|---|
+| CWS_ITEM_ID | ✅ 已代填（本扩展的商品 ID defkcgdm…） |
+| CWS_CLIENT_ID / SECRET / REFRESH_TOKEN | ❌ 待填：`cd ~/Desktop/fadada-autofill && node tools/cws-auth.mjs`，浏览器点一次授权即自动写入 |
 
-注意：本扩展 1.2.0 的 Chrome 版 08-31 提交的审核期间 API 传不了包，等审核结束后再跑。
+注意：1.2.0 的 Chrome 版（08-31 提交）审核期间 API 传不了包，等审核结束后再跑。
+
+### ⚠️ 首次运行时机
+
+本扩展两商店线上都已是 **1.2.0**，secrets 配齐后直接跑 CI 会撞版本号被拒。等下次改完代码把 `manifest.json` 升到 1.2.1+ 再跑（或手动跑时在「版本号」里填新版本）。
 
 ## 日常发版
 
