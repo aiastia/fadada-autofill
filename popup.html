@@ -98,6 +98,15 @@
     <button class="plain" id="readPage">读取当前值</button>
   </div>
 
+  <div class="group-title">迁移
+    <span>
+      <button class="mini-btn" id="exportBtn">导出数据</button>
+      <button class="mini-btn" id="importBtn">导入数据</button>
+    </span>
+  </div>
+  <div class="scope">导出全部资料 / 自定义字段 / 已学模板为 JSON 文件，可在新设备导入</div>
+  <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+
   <div id="status"></div>
 
   <script src="fields.js"></script>

@@ -409,6 +409,72 @@ $('readPage').onclick = async () => {
 $('autoFill').addEventListener('change', () => { collectFields(); saveState(); });
 $('showFab').addEventListener('change', () => { collectFields(); saveState(); });
 
+// ---------- 导出 / 导入（迁移） ----------
+$('exportBtn').onclick = () => {
+  collectFields();
+  saveState();
+  const data = {
+    app: 'fadada-autofill',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profiles: state.profiles,
+    activeProfileId: state.activeProfileId,
+    customFields: state.customFields,
+    templates: state.templates,
+    autoFill: state.autoFill,
+    showFab: state.showFab,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '蛙蛙填充-数据备份-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('已导出 ' + Object.keys(state.profiles).length + ' 套资料 ✓', 'ok');
+};
+
+$('importBtn').onclick = () => $('importFile').click();
+
+$('importFile').addEventListener('change', () => {
+  const file = $('importFile').files[0];
+  $('importFile').value = ''; // 允许重复选择同一文件
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (e) {
+      setStatus('文件不是有效的 JSON', 'err');
+      return;
+    }
+    if (data.app !== 'fadada-autofill' || !data.profiles) {
+      setStatus('不是本插件的导出文件', 'err');
+      return;
+    }
+    if (!confirm('导入将覆盖当前的资料、自定义字段和已学模板，确定继续？')) return;
+    state = fddNormalizeState(data);
+    chrome.storage.local.set({
+      profiles: state.profiles,
+      activeProfileId: state.activeProfileId,
+      templates: state.templates,
+      customFields: state.customFields,
+      autoFill: state.autoFill,
+      showFab: state.showFab,
+    }, () => {
+      renderProfiles();
+      renderFields();
+      renderCustomFields();
+      $('autoFill').checked = state.autoFill;
+      $('showFab').checked = state.showFab;
+      renderTplList();
+      setStatus('已导入 ' + Object.keys(state.profiles).length + ' 套资料 ✓', 'ok');
+    });
+  };
+  reader.readAsText(file, 'utf-8');
+});
+
 // ---------- 初始化 ----------
 buildRows();
 chrome.storage.local.get(null, (raw) => {
