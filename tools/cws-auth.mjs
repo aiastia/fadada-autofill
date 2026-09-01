@@ -2,7 +2,9 @@
 // 一次性获取 Chrome Web Store API 的 refresh token（在本机跑，自动写进 GitHub Secrets）。
 //
 // 用法：直接跑，按提示粘贴凭据
-//   cd ~/Desktop/macro-recorder && node tools/cws-auth.mjs
+//   cd ~/Desktop/fadada-autofill && node tools/cws-auth.mjs
+// 凭据输入过一次后会自动备份到 ~/.cws-auth.json（仅本机、权限 600、不进 git），
+// 以后再跑（本仓库或其他扩展仓库）都自动读取、免输入；该文件也是你的本地存档。
 //
 // 凭据从哪来（Google Cloud Console, console.cloud.google.com，用商店发布者账号登录）：
 //   1. 建项目 → API 和服务 → 库 → 搜「Chrome Web Store API」→ 启用
@@ -16,13 +18,29 @@ import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+const CFG_PATH = join(homedir(), '.cws-auth.json');
+
+function loadCfg() {
+  if (!existsSync(CFG_PATH)) return {};
+  try { return JSON.parse(readFileSync(CFG, 'utf8')); } catch { return {}; }
+}
 
 let CLIENT_ID = process.env.CWS_CLIENT_ID || '';
 let CLIENT_SECRET = process.env.CWS_CLIENT_SECRET || '';
+const cfg = loadCfg();
+if ((!CLIENT_ID || !CLIENT_SECRET) && (cfg.client_id || cfg.client_secret)) {
+  if (!CLIENT_ID && cfg.client_id) CLIENT_ID = cfg.client_id;
+  if (!CLIENT_SECRET && cfg.client_secret) CLIENT_SECRET = cfg.client_secret;
+  console.log('凭据已从本地 ' + CFG_PATH + ' 读取，无需重新输入。');
+}
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   const rl = readline.createInterface({ input: stdin, output: stdout });
-  console.log('粘贴 Google Cloud 凭据页里那个「桌面应用」OAuth 客户端的两个值：');
+  console.log('粘贴 Google Cloud 凭据页里那个「桌面应用」OAuth 客户端的两个值（输入一次即存本地，以后免输）：');
   CLIENT_ID = (await rl.question('  Client ID: ')).trim();
   CLIENT_SECRET = (await rl.question('  Client Secret: ')).trim();
   rl.close();
@@ -84,7 +102,18 @@ if (!j.refresh_token) {
   process.exit(1);
 }
 
-console.log('\n✅ refresh_token 拿到了！自动写入 GitHub Secrets…\n');
+try {
+  writeFileSync(CFG_PATH, JSON.stringify({
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    refresh_token: j.refresh_token,
+    saved_at: new Date().toISOString()
+  }, null, 2));
+  chmodSync(CFG_PATH, 0o600);
+  console.log('\n💾 凭据已备份到 ' + CFG_PATH + '（仅本机，下次任何仓库运行免输入）');
+} catch {}
+
+console.log('自动写入 GitHub Secrets…\n');
 const pairs = [
   ['CWS_CLIENT_ID', CLIENT_ID],
   ['CWS_CLIENT_SECRET', CLIENT_SECRET],
@@ -100,5 +129,5 @@ for (const [name, value] of pairs) {
   }
 }
 console.log(allOk
-  ? '\nChrome 的 secrets 已齐（CWS_ITEM_ID 之前已填）。去 GitHub Actions 跑「发布到 Chrome 商店」即可。'
+  ? '\nChrome 的 secrets 已齐。去 GitHub Actions 跑「发布到 Chrome 商店」即可。'
   : '\n有写入失败的项，在本仓库目录重跑本脚本或手动 gh secret set。');
