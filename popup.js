@@ -4,29 +4,9 @@ const GROUPS = [
   {
     mount: 'personal',
     slots: [
-      { key: 'name', label: '真实姓名' },
-      { key: 'penName', label: '笔名' },
-      { key: 'idNo', label: '身份证号' },
-      { key: 'address', label: '联系地址' },
-      { key: 'phone', label: '手机号' },
+      { key: 'address', label: '地址' },
       { key: 'email', label: '邮箱' },
-    ],
-  },
-  {
-    mount: 'bank',
-    slots: [
-      { key: 'acctName', label: '开户名称' },
-      { key: 'bank', label: '开户行' },
-      { key: 'bankBranch', label: '开户支行' },
-      { key: 'bankAccount', label: '银行账号' },
-    ],
-  },
-  {
-    mount: 'auth',
-    slots: [
-      { key: 'name2', label: '姓名' },
-      { key: 'idNo2', label: '身份证号' },
-      { key: 'penName2', label: '笔名' },
+      { key: 'fillDate', label: '填写日期2', placeholder: '留空自动填当天' },
     ],
   },
 ];
@@ -75,7 +55,7 @@ function buildRows() {
       const input = document.createElement('input');
       input.type = 'text';
       input.id = 'slot-' + s.key;
-      input.placeholder = s.label;
+      input.placeholder = s.placeholder || s.label;
       row.append(label, input);
       wrap.appendChild(row);
     }
@@ -214,15 +194,6 @@ $('delProfile').onclick = () => {
   renderFields();
   renderCustomFields();
   saveState(() => setStatus('已删除 ✓', 'ok'));
-};
-
-// 授权书字段 = 个人信息
-$('copyToAuth').onclick = () => {
-  $('slot-name2').value = $('slot-name').value;
-  $('slot-idNo2').value = $('slot-idNo').value;
-  $('slot-penName2').value = $('slot-penName').value;
-  FIXED_SLOTS.forEach(s => $('slot-' + s.key).classList.toggle('filled', !!$('slot-' + s.key).value.trim()));
-  setStatus('已复制，记得点「保存」', 'ok');
 };
 
 // ---------- 与页面通信 ----------

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!-- 法大大签署页仿真（2026-09 新版 3 控件）：Vue2 + Element UI 真组件，
+     验证 fields.js/content.js 的指纹识别、模板匹配与赋值（含日期控件进 v-model）。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://unpkg.com/element-ui@2.15.14/lib/theme-chalk/index.css">
+</head>
+<body>
+<div id="app">
+  <el-form class="fa-widget-fill fa-contract-scope" :model="form" label-position="left" size="mini">
+    <el-form-item widget-id="1789701090000167810" prop="address"
+      :rules="[{ required: true, message: '请输入地址', trigger: 'blur' }]">
+      <span slot="label" title="地址" class="fa-widget-fill-item__label">地址</span>
+      <el-input v-model="form.address" placeholder="请输入地址" maxlength="3000"></el-input>
+    </el-form-item>
+    <el-form-item widget-id="1789701090003112911" prop="email"
+      :rules="[{ required: true, message: '请输入邮箱', trigger: 'blur' }]">
+      <span slot="label" title="邮箱" class="fa-widget-fill-item__label">邮箱</span>
+      <el-input v-model="form.email" placeholder="请输入邮箱" maxlength="3000"></el-input>
+    </el-form-item>
+    <el-form-item widget-id="1789701090006119824" prop="fillDate"
+      :rules="[{ required: true, message: '请输入填写日期2', trigger: 'blur' }]">
+      <span slot="label" title="填写日期2" class="fa-widget-fill-item__label">填写日期2</span>
+      <el-date-picker v-model="form.fillDate" format="yyyy年MM月dd日" placeholder="YYYY年MM月DD日"></el-date-picker>
+    </el-form-item>
+  </el-form>
+  <pre id="out">PENDING</pre>
+</div>
+<script src="https://unpkg.com/vue@2.7.16/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui@2.15.14/lib/index.js"></script>
+<script src="../fields.js"></script>
+<script src="../content.js"></script>
+<script>
+window.app = new Vue({
+  el: '#app',
+  data: { form: { address: '', email: '', fillDate: null } },
+});
+const results = [];
+const t = (name, pass, detail) => results.push({ name, pass, detail: detail == null ? '' : String(detail) });
+
+setTimeout(async () => {
+  try {
+    const F = window.__FDD_FILL__;
+    const today = fddTodayCn();
+
+    const inputs = F.getFillInputs();
+    t('控件数=3', inputs.length === 3, inputs.length);
+    t('指纹', F.fingerprint(inputs) === '地址,邮箱,填写日期2', F.fingerprint(inputs));
+    t('日期控件识别', inputs[2] && inputs[2].isDate === true && !inputs[0].isDate);
+    const tpl = fddFindTemplate(fddNormalizeState(null), F.fingerprint(inputs));
+    t('内置模板匹配', !!tpl, tpl && tpl.name);
+    t('今天格式', /^\d{4}年\d{2}月\d{2}日$/.test(today), today);
+
+    // 阶段1：只给地址/邮箱，fillDate 应默认当天（面板点今天格子）
+    const r1 = await F.fillWith({ address: '广东惠州潼侨镇惠州悠山美地花园', email: 'wawa@example.com' });
+    t('填充 ok', r1.ok === true && r1.filled === 3, JSON.stringify(r1.filled) + '/' + r1.total + ' ' + JSON.stringify(r1.results));
+    t('面板已关闭', ![...document.querySelectorAll('.el-picker-panel')].some(p => p.offsetWidth > 0 && getComputedStyle(p).display !== 'none'));
+
+    t('地址进模型', app.form.address === '广东惠州潼侨镇惠州悠山美地花园', app.form.address);
+    t('邮箱进模型', app.form.email === 'wawa@example.com', app.form.email);
+    const dateInput = document.querySelector('.el-date-editor input');
+    t('日期显示值=当天', dateInput.value === today, dateInput.value);
+    t('日期进模型(Date)', app.form.fillDate instanceof Date &&
+      app.form.fillDate.toDateString() === new Date().toDateString(),
+      app.form.fillDate && app.form.fillDate.toString());
+    t('校验错误清空', document.querySelectorAll('.fa-widget-fill .is-error').length === 0,
+      [...document.querySelectorAll('.fa-widget-fill .is-error')].map(e =>
+        (e.querySelector('.fa-widget-fill-item__label')||{}).textContent + '=' +
+        (e.querySelector('.el-form-item__error')||{}).textContent).join(' | '));
+
+    // 阶段2：显式指定 fillDate 覆盖默认（2026-01-02，需面板翻月）
+    app.form.address = ''; app.form.email = ''; app.form.fillDate = null;
+    await Vue.nextTick();
+    await new Promise(r => setTimeout(r, 200));
+    await F.fillWith({ address: '测试地址', email: 'a@b.com', fillDate: '2026年01月02日' });
+    await new Promise(r => setTimeout(r, 300));
+    t('覆盖指定日期', document.querySelector('.el-date-editor input').value === '2026年01月02日',
+      document.querySelector('.el-date-editor input').value);
+    t('指定日期进模型', app.form.fillDate instanceof Date &&
+      app.form.fillDate.getFullYear() === 2026 && app.form.fillDate.getMonth() === 0 && app.form.fillDate.getDate() === 2,
+      app.form.fillDate && app.form.fillDate.toString());
+
+    const allPass = results.every(x => x.pass);
+    document.getElementById('out').textContent =
+      (allPass ? 'ALL PASS' : 'FAIL') + '\n' + JSON.stringify(results, null, 2);
+  } catch (e) {
+    document.getElementById('out').textContent = 'EXCEPTION\n' + (e && e.stack || e);
+  }
+}, 600);
+</script>
+</body>
+</html>

@@ -3,32 +3,27 @@
 // 用 var 声明：便于调试注入时重复执行不报错。
 
 var FDD_FIELDS = [
-  { key: 'name',        label: '真实姓名' },
-  { key: 'penName',     label: '笔名' },
-  { key: 'idNo',        label: '身份证号' },
-  { key: 'address',     label: '联系地址' },
-  { key: 'phone',       label: '手机号' },
-  { key: 'email',       label: '邮箱' },
-  { key: 'acctName',    label: '开户名称' },
-  { key: 'bank',        label: '开户行' },
-  { key: 'bankBranch',  label: '开户支行' },
-  { key: 'bankAccount', label: '银行账号' },
-  { key: 'name2',       label: '姓名（授权书）' },
-  { key: 'idNo2',       label: '身份证号（授权书）' },
-  { key: 'penName2',    label: '笔名（授权书）' },
+  { key: 'address',  label: '地址' },
+  { key: 'email',    label: '邮箱' },
+  { key: 'fillDate', label: '填写日期2' },
 ];
 
-// 内置模板：蛙蛙平台·个人作品著作权转让协议（13 个待处理控件按面板顺序）
+// 内置模板：蛙蛙平台·个人作品著作权转让协议（2026-09 改版，签署页只剩 3 个控件）
 var FDD_BUILTIN_TEMPLATES = [
   {
-    id: 'builtin-wawa-transfer',
+    id: 'builtin-wawa-transfer-v2',
     name: '蛙蛙平台·个人作品著作权转让协议',
-    fingerprint: '单行文本1,单行文本1,单行文本1,单行文本1,单行文本1,单行文本1,单行文本3,单行文本3,单行文本3,单行文本3,单行文本4,单行文本5,单行文本6',
-    keys: ['name', 'penName', 'idNo', 'address', 'phone', 'email',
-           'acctName', 'bank', 'bankBranch', 'bankAccount',
-           'name2', 'idNo2', 'penName2'],
+    fingerprint: '地址,邮箱,填写日期2',
+    keys: ['address', 'email', 'fillDate'],
   },
 ];
+
+// 填写日期默认值：当天，格式与签署页日期控件占位符 YYYY年MM月DD日 一致
+function fddTodayCn() {
+  var d = new Date();
+  var p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日';
+}
 
 var FDD_DEFAULT_STATE = {
   profiles: null,          // {id: {id, name, values}}；null 时在规范化时生成默认资料
@@ -80,5 +75,6 @@ function fddGuessKey(value, profileValues) {
   if (/^1\d{10}$/.test(v)) return 'phone';
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return 'email';
   if (/^\d{16,19}$/.test(v)) return 'bankAccount';
+  if (/^\d{4}年\d{1,2}月\d{1,2}日$/.test(v)) return 'fillDate';
   return null;
 }

@@ -36,6 +36,7 @@
         widgetId: item.getAttribute('widget-id'),
         label: labelEl ? labelEl.textContent.trim() : '',
         input: item.querySelector('input.el-input__inner, textarea'),
+        isDate: !!item.querySelector('.el-date-editor'),
       };
     }).filter(x => x.input);
   }
@@ -52,7 +53,82 @@
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.dispatchEvent(new Event('blur'));
+    // Element 的 currentValue 经异步 watcher 同步：同步派发 blur 会拿旧值触发"必填"误报，
+    // 挪到微任务里等 Vue 队列冲刷完再失焦
+    Promise.resolve().then(() => el.dispatchEvent(new Event('blur')));
+  }
+
+  // Element 日期控件：模拟真人路径提交 —— focus 打开日期面板 → 点目标日的格子。
+  // 真实签署页实测：直接给 input 派发 input/change/Enter 只会把文字浮在框上，
+  // 表单模型里仍是空值；只有面板选格才会真正提交。
+  async function pickDate(input, dateText) {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const findPanel = () => [...document.querySelectorAll('.el-picker-panel')].find(
+      (p) => p.offsetWidth > 0 && getComputedStyle(p).display !== 'none' && getComputedStyle(p).visibility !== 'hidden'
+    ) || null;
+    const synthClick = (el) => {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      el.click();
+    };
+
+    input.focus();
+    // 页面刚加载、组件未就绪时 focus 开不了面板——多试几轮（每轮 ~1.2s 等面板 + 重聚焦），
+    // 全失败才回退手输（手输在蛙蛙页只浮文字不提交，因此尽量等到面板）
+    let panel = null;
+    for (let attempt = 0; attempt < 4 && !panel; attempt++) {
+      for (let i = 0; i < 24 && !panel; i++) { panel = findPanel(); if (!panel) await sleep(50); }
+      if (!panel) { input.blur(); await sleep(900); input.focus(); }
+    }
+    if (!panel) return typeIntoDate(input, dateText) ? 'typed-no-panel' : 'no-panel';
+
+    let m = dateText.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/) || dateText.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!m) return 'bad-format';
+    const y = +m[1], mo = +m[2], d = +m[3];
+    const now = new Date();
+    const isToday = y === now.getFullYear() && mo === now.getMonth() + 1 && d === now.getDate();
+
+    // 翻月：面板头是「2026年 9月」两个 label，算差几个月点箭头
+    const labels = [...panel.querySelectorAll('.el-date-picker__header-label')].map((e) => parseInt(e.textContent, 10) || 0);
+    if (labels.length >= 2 && labels[0]) {
+      const diff = (y * 12 + mo - 1) - (labels[0] * 12 + labels[1] - 1);
+      const btnCls = diff < 0 ? '.el-date-picker__prev-btn.el-icon-arrow-left' : '.el-date-picker__next-btn.el-icon-arrow-right';
+      for (let i = 0; i < Math.abs(diff) && i < 36; i++) {
+        const btn = panel.querySelector(btnCls);
+        if (!btn) break;
+        synthClick(btn);
+        await sleep(80);
+      }
+    }
+
+    let cell = isToday ? panel.querySelector('td.today:not(.disabled)') : null;
+    if (!cell) {
+      cell = [...panel.querySelectorAll('td')].find((td) =>
+        !td.classList.contains('disabled') && !td.classList.contains('prev-month') && !td.classList.contains('next-month')
+        && td.textContent.trim() === String(d));
+    }
+    if (!cell) { input.blur(); return 'no-cell'; }
+    synthClick(cell.querySelector('span,div') || cell);
+    await sleep(150);
+    input.blur();
+    return input.value.trim() ? 'filled' : 'unconfirmed';
+  }
+
+  // 面板打不开时的兜底：手输 + Enter（标准 el-date-picker 上有效）
+  function typeIntoDate(el, value) {
+    el.focus();
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    const enter = () => {
+      const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
+      Object.defineProperty(ev, 'keyCode', { get: () => 13 });
+      Object.defineProperty(ev, 'which', { get: () => 13 });
+      return ev;
+    };
+    el.dispatchEvent(enter());
+    el.blur();
+    return el.value.trim() !== '';
   }
 
   function activeValues() {
@@ -65,25 +141,37 @@
    * @param {Object} values  语义 key -> 值
    * @param {Object} opts    { skipFilled } 自动填充时跳过已有内容的框
    */
-  function fillWith(values, opts = {}) {
+  async function fillWith(values, opts = {}) {
     const inputs = getFillInputs();
     if (!inputs.length) return { ok: false, reason: 'no-inputs' };
     const fp = fingerprint(inputs);
     const tpl = fddFindTemplate(settings, fp);
     if (!tpl) return { ok: false, reason: 'no-template', fingerprint: fp, count: inputs.length };
-    const results = inputs.map((x, i) => {
+    const eff = Object.assign({}, values);
+    if (!(eff.fillDate || '').trim()) eff.fillDate = fddTodayCn(); // 填写日期默认当天
+    const results = [];
+    for (let i = 0; i < inputs.length; i++) {
+      const x = inputs[i];
       const key = tpl.keys[i];
-      if (!key) return { i, action: 'skipped-no-key' };
-      const v = (values[key] || '').trim();
-      if (!v) return { i, key, action: 'skipped-empty-value' };
-      if (opts.skipFilled && x.input.value.trim() !== '') return { i, key, action: 'skipped-filled' };
-      setNativeValue(x.input, v);
-      return { i, key, action: 'filled' };
-    });
+      if (!key) { results.push({ i, action: 'skipped-no-key' }); continue; }
+      const v = (eff[key] || '').trim();
+      if (!v) { results.push({ i, key, action: 'skipped-empty-value' }); continue; }
+      // 日期例外：框里已有的文字可能只是"浮"在 DOM 上未提交（自动填充兜底/页面预显），
+      // 与目标同值时重新选格幂等无害；不同值视为用户自己填的，尊重跳过
+      const cur = x.input.value.trim();
+      if (opts.skipFilled && cur !== '' && !(x.isDate && cur === v)) { results.push({ i, key, action: 'skipped-filled' }); continue; }
+      if (x.isDate) {
+        const st = await pickDate(x.input, v);
+        results.push({ i, key, action: st });
+      } else {
+        setNativeValue(x.input, v);
+        results.push({ i, key, action: 'filled' });
+      }
+    }
     return {
       ok: true,
       template: tpl.name,
-      filled: results.filter(r => r.action === 'filled').length,
+      filled: results.filter((r) => r.action === 'filled' || r.action === 'typed-no-panel').length,
       total: inputs.length,
       results,
     };
@@ -128,8 +216,8 @@
       boxShadow: '0 2px 8px rgba(0,0,0,.25)', userSelect: 'none',
     });
     fab.onclick = () => {
-      loadSettings(() => {
-        const r = fillByTemplate();
+      loadSettings(async () => {
+        const r = await fillByTemplate();
         if (!r.ok && r.reason === 'no-template') {
           fab.textContent = '模板未识别·点图标学习';
           setTimeout(() => { fab.textContent = '⚡ 填充'; }, 2500);
@@ -149,7 +237,7 @@
     autoFilled = true;
     loadSettings(() => {
       ensureFab(settings.showFab);
-      if (settings.autoFill) fillByTemplate({ skipFilled: true });
+      if (settings.autoFill) fillByTemplate({ skipFilled: true }).catch(() => {});
     });
   }
 
@@ -175,7 +263,7 @@
       try {
         if (msg.cmd === 'fill') {
           // 每次现读 storage，避免与 popup 保存竞态
-          loadSettings(() => sendResponse(fillByTemplate()));
+          loadSettings(async () => sendResponse(await fillByTemplate()));
           return true; // 异步响应
         } else if (msg.cmd === 'read') {
           sendResponse({ ok: true, page: readPage() });
